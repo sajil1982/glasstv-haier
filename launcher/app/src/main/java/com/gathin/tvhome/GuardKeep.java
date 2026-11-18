@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -40,6 +41,23 @@ final class GuardKeep {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_OFF, false);
     }
 
+    private static final String KEY_ALWAYS = "keep_always";
+
+    /** stock_home_redirect: HomeKeyService is put back whenever GuardRevival starts (boot, after a force stop), not
+     *  only with guard_off_in_standby. Fire OS also clears the accessibility list without a force stop, which
+     *  looks the same to the service as being turned off, so the flag is not dropped on unbind. Remove
+     *  stock_home_redirect from the theme to let it stay off. */
+    static boolean keepAlways(Context context) {
+        UserManager users = context.getSystemService(UserManager.class);
+        if (users != null && !users.isUserUnlocked()) return false;
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ALWAYS, false);
+    }
+
+    static void setKeepAlways(Context context, boolean keep) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_ALWAYS, false) != keep) prefs.edit().putBoolean(KEY_ALWAYS, keep).commit();
+    }
+
     static void setOffInStandby(Context context, boolean off) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_OFF, off).commit();
     }
@@ -49,7 +67,7 @@ final class GuardKeep {
         // The helper may already be bound. Arming only inside onServiceConnected misses an opt-in
         // that arrives after that, so the first screen-off does nothing (Philips 65PUS8102).
         HomeKeyService.applyStandbyOptIn();
-        if (!offInStandby(context)) return;
+        if (!offInStandby(context) && !keepAlways(context)) return;
         if (context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS)
                 != PackageManager.PERMISSION_GRANTED) return;
         PowerManager power = context.getSystemService(PowerManager.class);
@@ -80,6 +98,21 @@ final class GuardKeep {
             Settings.Secure.putInt(context.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 1);
         } catch (RuntimeException ignored) {
             // The settings are the system's; a refusal leaves the helper as it was.
+        }
+    }
+
+    private static boolean isInteractive(Context context) {
+        PowerManager power = context.getSystemService(PowerManager.class);
+        return power == null || power.isInteractive();
+    }
+
+    /** At boot the listener can connect before the screen counts as on, and no SCREEN_ON follows on a Fire TV that
+     *  powered up with the screen already on: try again a few times over the first minutes. Idempotent. */
+    static void ensureHomeKeySoon(Context context) {
+        final Context app = context.getApplicationContext();
+        android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        for (long delay : new long[]{10_000L, 30_000L, 60_000L, 120_000L}) {
+            handler.postDelayed(() -> ensureHomeKey(app), delay);
         }
     }
 

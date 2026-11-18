@@ -225,13 +225,19 @@ public class HomeKeyService extends AccessibilityService {
         // home_key_service.xml subscribes to no events, so the redirects ask for window changes only when one is on.
         AccessibilityServiceInfo info = getServiceInfo();
         landscapeApps.clear();
-        landscapeApps.addAll(java.util.Arrays.asList(getResources().getStringArray(R.array.force_landscape_apps)));
+        // config.xml gives the defaults; a theme's config.json can replace either list without a rebuild.
+        landscapeApps.addAll(Config.themeList(this, "force_landscape_apps",
+                java.util.Arrays.asList(getResources().getStringArray(R.array.force_landscape_apps))));
         pointerApps.clear();
-        pointerApps.addAll(java.util.Arrays.asList(getResources().getStringArray(R.array.pointer_apps)));
+        pointerApps.addAll(Config.themeList(this, "pointer_apps",
+                java.util.Arrays.asList(getResources().getStringArray(R.array.pointer_apps))));
         if (info != null && (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty() || watchFront || !landscapeApps.isEmpty() || !pointerApps.isEmpty())) {
             info.eventTypes |= AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
             setServiceInfo(info);
         }
+        // stock_home_redirect (Fire TV): this helper is the only way Home comes back, so GuardRevival puts it back on
+        // the accessibility list after a force stop (Fire OS memory cleanup, Settings > Applications > Force stop).
+        GuardKeep.setKeepAlways(this, !stockHome.isEmpty());
         if (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty()) probeAtBoot();
         armStandbyExit();
         holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);

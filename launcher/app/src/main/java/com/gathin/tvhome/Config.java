@@ -911,6 +911,20 @@ final class Config {
         return out;
     }
 
+    /** One list from the theme's config.json, or {@code fallback} when the theme has none. For services that read
+     *  a single key (HomeKeyService: force_landscape_apps, pointer_apps) without building a whole Config. */
+    static List<String> themeList(Context ctx, String key, List<String> fallback) {
+        try {
+            File dir = dir(ctx);
+            File file = dir != null ? new File(dir, FILE_NAME) : null;
+            boolean mounted = Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState());
+            JSONObject json = readOverlay(ctx, file, mounted);
+            return json != null ? stringList(json, key, fallback) : fallback;
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
     private static List<String> stringList(JSONObject o, String key, List<String> fallback) {
         Object v = o.opt(key);
         if (!(v instanceof JSONArray)) return fallback;

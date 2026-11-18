@@ -78,6 +78,9 @@ The home screen reads a theme — dock apps, columns, wallpaper, colours — fro
 | `force_landscape_apps` | Hold the screen landscape for portrait-only apps (Fire TV) |
 | `pointer_apps` | Show the remote pointer inside touch-only apps (Fire TV) |
 
+`force_landscape_apps` and `pointer_apps` can also go in the theme's `config.json`, so an app can be
+added without rebuilding.
+
 See [`themes/README.md`](themes/README.md) for every key, and
 [`tools/wallpaper-generators/`](tools/wallpaper-generators) to make wallpaper sets.
 

@@ -27,6 +27,7 @@ public class GuardRevival extends NotificationListenerService {
                 public void onReceive(Context context, Intent intent) {
                     stopWaiting();
                     GuardKeep.ensureHomeKey(GuardRevival.this);
+                    GuardKeep.ensureHomeKeySoon(GuardRevival.this);
                 }
             };
             registerReceiver(unlocked, new IntentFilter(Intent.ACTION_USER_UNLOCKED));
@@ -37,6 +38,7 @@ public class GuardRevival extends NotificationListenerService {
             return;
         }
         GuardKeep.ensureHomeKey(this);
+        GuardKeep.ensureHomeKeySoon(this);
     }
 
     private void stopWaiting() {
