@@ -1,0 +1,17 @@
+# Android / Gradle build output
+launcher/app/build/
+launcher/build/
+launcher/.gradle/
+.gradle/
+build/
+# Local SDK path (machine-specific)
+local.properties
+launcher/local.properties
+# Signing material — never commit
+*.keystore
+*.jks
+# Built APKs (publish as release assets instead)
+*.apk
+# OS/editor cruft
+.DS_Store
+*.swp
