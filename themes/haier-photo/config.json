@@ -1,0 +1,46 @@
+{
+  "dock_apps": [
+    "com.netflix.ninja",
+    "com.amazon.amazonvideo.livingroom",
+    "com.google.android.youtube.tv",
+    "in.startv.hotstar",
+    "com.graymatrix.did",
+    "com.plexapp.android",
+    "com.apple.atve.androidtv.appletv"
+  ],
+  "hidden_apps": [
+    "com.mediatek.wwtv.tvcenter",
+    "com.haier.launcher.haiermatrix",
+    "com.haier.oemtabprovider"
+  ],
+  "live_tv_package": "com.mediatek.wwtv.tvcenter",
+  "columns": 6,
+  "wallpaper": true,
+  "wallpaper_dim": 0,
+  "show_greeting": false,
+  "clock_format": "12",
+  "icon_only_buttons": true,
+  "icon_only_inputs": true,
+  "wifi_label_width": 0,
+  "dock_title": false,
+  "ambient_glow": false,
+  "dock_glass": false,
+  "dock_opacity": 45,
+  "dock_even_padding": true,
+  "single_row": true,
+  "dock_band_all": true,
+  "always_show_names": false,
+  "focus_overshoot": false,
+  "app_banners": [
+    "com.netflix.ninja=banner_mono_netflix",
+    "com.amazon.amazonvideo.livingroom=banner_mono_prime",
+    "com.google.android.youtube.tv=banner_mono_youtube",
+    "com.plexapp.android=banner_mono_plex",
+    "com.mediatek.androidbox=banner_mono_haicast",
+    "com.mediatek.wwtv.mediaplayer=banner_mono_mediaplayer",
+    "com.android.vending=banner_mono_playstore",
+    "com.android.tv.settings=banner_mono_settings",
+    "com.apple.atve.androidtv.appletv=banner_mono_appletv"
+  ],
+  "wallpaper_rotation_minutes": 30
+}
