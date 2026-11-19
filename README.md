@@ -36,7 +36,7 @@ the busy stock launcher with a quiet home screen that looks like an Apple TV.
 - **Fire TV support**, where the stock home can't be replaced:
   - a Home-button redirect (accessibility service) so the remote's Home lands here;
   - a landscape hold for phone apps that only run portrait;
-  - an on-screen **pointer** (arrows move it, OK taps) for touch-only apps;
+  - an on-screen **pointer** for touch-only apps: tap an arrow to nudge it, hold to glide (it speeds up the longer you hold, two arrows go diagonal), OK taps, hold OK to long-press, Fast-forward/Rewind scroll, Play/Pause hides it;
   - top-bar buttons that can open apps with no launcher entry (e.g. the Live guide).
 
 ## Requirements

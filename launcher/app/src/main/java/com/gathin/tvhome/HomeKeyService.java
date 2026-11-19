@@ -320,7 +320,11 @@ public class HomeKeyService extends AccessibilityService {
     private final Set<String> pointerApps = new HashSet<>();
     private boolean pointerApp, pointerOn;
     private View pointerView;
+    private android.view.WindowManager.LayoutParams pointerLp;
+    /** Pointer tip in screen pixels, and the screen size it moves in. */
     private float px, py;
+    private int sw, sh;
+    private float pad;
     private long okDownAt, lastScrollAt;
 
     private void setPointer(boolean on) {
@@ -329,29 +333,41 @@ public class HomeKeyService extends AccessibilityService {
             if (on && pointerView == null) {
                 android.util.DisplayMetrics m = new android.util.DisplayMetrics();
                 wm.getDefaultDisplay().getRealMetrics(m);
-                if (px == 0 && py == 0) { px = m.widthPixels / 2f; py = m.heightPixels / 2f; }
+                sw = m.widthPixels;
+                sh = m.heightPixels;
+                if (px == 0 && py == 0) { px = sw / 2f; py = sh / 2f; }
                 final float d = m.density;
+                pad = 3 * d;
+                // A small window that moves, not a full-screen layer redrawn on every step: far less work for the GPU.
                 pointerView = new View(this) {
                     final android.graphics.Paint fill = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
                     final android.graphics.Paint ring = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                    @Override protected void onDraw(android.graphics.Canvas c) {
+                    final android.graphics.Path a = new android.graphics.Path();
+                    {
                         fill.setColor(0xE6FFFFFF);
                         ring.setColor(0xFF000000); ring.setStyle(android.graphics.Paint.Style.STROKE); ring.setStrokeWidth(2.5f * d);
-                        android.graphics.Path a = new android.graphics.Path();
-                        a.moveTo(px, py); a.lineTo(px, py + 22 * d); a.lineTo(px + 6 * d, py + 16.5f * d);
-                        a.lineTo(px + 10.5f * d, py + 26 * d); a.lineTo(px + 14 * d, py + 24.2f * d);
-                        a.lineTo(px + 9.5f * d, py + 15 * d); a.lineTo(px + 16.5f * d, py + 15 * d); a.close();
+                        float x = pad, y = pad;
+                        a.moveTo(x, y); a.lineTo(x, y + 22 * d); a.lineTo(x + 6 * d, y + 16.5f * d);
+                        a.lineTo(x + 10.5f * d, y + 26 * d); a.lineTo(x + 14 * d, y + 24.2f * d);
+                        a.lineTo(x + 9.5f * d, y + 15 * d); a.lineTo(x + 16.5f * d, y + 15 * d); a.close();
+                    }
+                    @Override protected void onDraw(android.graphics.Canvas c) {
                         c.drawPath(a, fill); c.drawPath(a, ring);
                     }
                 };
-                android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams(
-                        android.view.WindowManager.LayoutParams.MATCH_PARENT, android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                int size = Math.round(20 * d + 2 * pad), tall = Math.round(28 * d + 2 * pad);
+                pointerLp = new android.view.WindowManager.LayoutParams(size, tall,
                         android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                         android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                                 | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                         android.graphics.PixelFormat.TRANSLUCENT);
-                wm.addView(pointerView, lp);
+                pointerLp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+                pointerLp.windowAnimations = 0;
+                pointerLp.x = Math.round(px - pad);
+                pointerLp.y = Math.round(py - pad);
+                wm.addView(pointerView, pointerLp);
             } else if (!on && pointerView != null) {
+                stopPointerGlide();
                 wm.removeView(pointerView);
                 pointerView = null;
             }
@@ -359,6 +375,65 @@ public class HomeKeyService extends AccessibilityService {
             pointerView = null;
         }
         pointerOn = pointerView != null;
+    }
+
+    /** The screen size, read again on each key: an app can open in portrait and turn landscape (force_landscape_apps)
+     *  after the pointer appeared, and a size read only once kept the pointer in the left part of the screen. */
+    private void refreshScreen() {
+        try {
+            android.util.DisplayMetrics m = new android.util.DisplayMetrics();
+            ((android.view.WindowManager) getSystemService(WINDOW_SERVICE)).getDefaultDisplay().getRealMetrics(m);
+            if (m.widthPixels > 0 && m.heightPixels > 0) { sw = m.widthPixels; sh = m.heightPixels; }
+        } catch (RuntimeException ignored) { }
+        px = Math.max(2, Math.min(sw - 2, px));
+        py = Math.max(2, Math.min(sh - 2, py));
+    }
+
+    private void placePointer() {
+        if (pointerView == null || pointerLp == null) return;
+        int x = Math.round(px - pad), y = Math.round(py - pad);
+        if (x == pointerLp.x && y == pointerLp.y) return;
+        pointerLp.x = x;
+        pointerLp.y = y;
+        try {
+            ((android.view.WindowManager) getSystemService(WINDOW_SERVICE)).updateViewLayout(pointerView, pointerLp);
+        } catch (RuntimeException ignored) { }
+    }
+
+    /** Arrows held right now; two at once move diagonally. */
+    private boolean holdL, holdR, holdU, holdD;
+    private long glideStart;
+    private final android.os.Handler glideHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    /** One frame of a held arrow: the pointer glides at a speed that starts gentle and builds up, instead of
+     *  jumping on the remote's key repeats (which only begin after about half a second). */
+    private final Runnable glide = new Runnable() {
+        @Override public void run() {
+            if (pointerView == null) return;
+            int dx = (holdR ? 1 : 0) - (holdL ? 1 : 0), dy = (holdD ? 1 : 0) - (holdU ? 1 : 0);
+            if (dx == 0 && dy == 0) return;
+            long held = SystemClock.uptimeMillis() - glideStart;
+            // Screen widths per second: 0.45 at first, up to 1.5 after about 0.8 s.
+            float t = Math.min(1f, Math.max(0f, (held - 120) / 700f));
+            float speed = sw * (0.45f + 1.05f * t * t) / 60f;
+            float nx = px + dx * speed, ny = py + dy * speed;
+            long now = SystemClock.uptimeMillis();
+            // Pushing against an edge scrolls the app that way.
+            if ((ny < 4 || ny > sh - 4 || nx < 4 || nx > sw - 4) && held > 300 && now - lastScrollAt > 350) {
+                lastScrollAt = now;
+                float cx = sw / 2f, cy = sh / 2f;
+                int ex = nx < 4 ? -1 : nx > sw - 4 ? 1 : 0, ey = ny < 4 ? -1 : ny > sh - 4 ? 1 : 0;
+                gesture(cx + ex * sw * 0.2f, cy + ey * sh * 0.2f, cx - ex * sw * 0.2f, cy - ey * sh * 0.2f, 250);
+            }
+            px = Math.max(2, Math.min(sw - 2, nx));
+            py = Math.max(2, Math.min(sh - 2, ny));
+            placePointer();
+            glideHandler.postDelayed(this, 16);
+        }
+    };
+
+    private void stopPointerGlide() {
+        holdL = holdR = holdU = holdD = false;
+        glideHandler.removeCallbacks(glide);
     }
 
     private void gesture(float x0, float y0, float x1, float y1, long ms) {
@@ -384,8 +459,8 @@ public class HomeKeyService extends AccessibilityService {
             return true;
         }
         if (!pointerOn || pointerView == null) return false;
-        int w = pointerView.getWidth(), h = pointerView.getHeight();
-        if (w == 0 || h == 0) return false;
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) refreshScreen();
+        if (sw == 0 || sh == 0) return false;
         if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
             if (e.getAction() == KeyEvent.ACTION_DOWN) {
                 if (e.getRepeatCount() == 0) okDownAt = SystemClock.uptimeMillis();
@@ -395,31 +470,42 @@ public class HomeKeyService extends AccessibilityService {
             }
             return true;
         }
-        int dx = code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 0;
-        int dy = code == KeyEvent.KEYCODE_DPAD_UP ? -1 : code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : 0;
+        boolean arrow = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN;
         boolean wind = code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD || code == KeyEvent.KEYCODE_MEDIA_REWIND;
-        if (dx == 0 && dy == 0 && !wind) return false;
-        if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+        if (!arrow && !wind) return false;
         long now = SystemClock.uptimeMillis();
         if (wind) {   // Rewind / Fast forward scroll the page up / down under the pointer
-            if (now - lastScrollAt > 350) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN && now - lastScrollAt > 350) {
                 lastScrollAt = now;
-                float span = h * 0.35f * (code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ? -1 : 1);
-                gesture(px, h / 2f - span / 2, px, h / 2f + span / 2, 250);
+                float span = sh * 0.35f * (code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD ? -1 : 1);
+                gesture(px, sh / 2f - span / 2, px, sh / 2f + span / 2, 250);
             }
             return true;
         }
-        float step = Math.min(w / 18f, w / 90f + e.getRepeatCount() * (w / 320f));
-        float nx = px + dx * step, ny = py + dy * step;
-        // Pushing against an edge scrolls the app that way.
-        if ((ny < 4 || ny > h - 4 || nx < 4 || nx > w - 4) && e.getRepeatCount() > 2 && now - lastScrollAt > 350) {
-            lastScrollAt = now;
-            float cx = w / 2f, cy = h / 2f;
-            gesture(cx + dx * w * 0.2f, cy + dy * h * 0.2f, cx - dx * w * 0.2f, cy - dy * h * 0.2f, 250);
+        boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        if (down && e.getRepeatCount() > 0) return true;   // the glide is already running
+        boolean wasIdle = !(holdL || holdR || holdU || holdD);
+        if (code == KeyEvent.KEYCODE_DPAD_LEFT) holdL = down;
+        else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) holdR = down;
+        else if (code == KeyEvent.KEYCODE_DPAD_UP) holdU = down;
+        else holdD = down;
+        if (down) {
+            // A single press nudges the pointer at once (about 1/80 of the screen) for fine aiming.
+            int dx = code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 0;
+            int dy = code == KeyEvent.KEYCODE_DPAD_UP ? -1 : code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : 0;
+            float nudge = sw / 80f;
+            px = Math.max(2, Math.min(sw - 2, px + dx * nudge));
+            py = Math.max(2, Math.min(sh - 2, py + dy * nudge));
+            placePointer();
+            if (wasIdle) {
+                glideStart = now;
+                glideHandler.removeCallbacks(glide);
+                glideHandler.postDelayed(glide, 120);
+            }
+        } else if (!(holdL || holdR || holdU || holdD)) {
+            glideHandler.removeCallbacks(glide);
         }
-        px = Math.max(2, Math.min(w - 2, nx));
-        py = Math.max(2, Math.min(h - 2, ny));
-        pointerView.invalidate();
         return true;
     }
 
